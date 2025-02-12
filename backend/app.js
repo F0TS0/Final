@@ -1,28 +1,62 @@
-// app.js
+// This code sets up an Express API to interact with the Google Cloud Vertex AI model  for chatbot functionality. It handles the connection to the API and processes user input.
 
-const express = require('express');
-const connectDB = require('./config/db');
-var cors = require('cors');
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
+import { VertexAI } from "@google-cloud/vertexai";
 
-// routes
-const books = require('./routes/api/books');
+dotenv.config();
 
 const app = express();
+app.use(express.json());
+app.use(cors());
 
-// Connect Database
-connectDB();
+const projectId = process.env.GCP_PROJECT_ID;
+const location = "us-central1";
+const vertexAI = new VertexAI({
+  projectId: projectId,
+  location: location,
+});
 
-// cors
-app.use(cors({ origin: true, credentials: true }));
+const model = vertexAI.getGenerativeModel({ model: "gemini-pro" });
 
-// Init Middleware
-app.use(express.json({ extended: false }));
+app.post("/chat", async (req, res) => {
+  try {
+    const { message } = req.body;
 
-app.get('/', (req, res) => res.send('Hello world!'));
+    if (!message) {
+      return res.status(400).json({ error: "Message is required" });
+    }
 
-// use Routes
-app.use('/api/books', books);
+    const response = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: message }] }],
+    });
 
-const port = process.env.PORT || 8082;
+    console.log("Vertex AI Response:", response);
 
-app.listen(port, () => console.log(`Server running on port ${port}`));
+    if (
+      response.response.candidates &&
+      response.response.candidates.length > 0
+    ) {
+      console.log("Response candidates:", response.response.candidates);
+      res.json({
+        reply: response.response.candidates[0].content.parts[0].text,
+      });
+    } else {
+      console.error("No valid candidates in the response");
+      res.status(500).json({ error: "No valid response from Vertex AI" });
+    }
+  } catch (error) {
+    console.error("Vertex AI API Error:", error);
+    res
+      .status(500)
+      .json({ error: "Failed to fetch response", details: error.message });
+  }
+});
+
+app.get("/", (req, res) => {
+  res.send("API is running...");
+});
+
+const PORT = process.env.PORT || 5001;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
